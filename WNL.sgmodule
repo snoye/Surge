@@ -1,0 +1,7 @@
+#!name=万年历
+#!desc=万年历
+#!homepage=https://yfamilys.com 
+[Panel] 
+万年历=script-name=万年历
+[Script] 
+万年历=type=generic,script-path=, https://raw.githubusercontent.com/snoye/Surge/refs/heads/main/WNL.js,argument=icon=film&color=#d66969
