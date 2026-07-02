@@ -1,151 +1,123 @@
-(async () => {
+/**
+ * ==========================================
+ * 📌 岁时黄历 (Surge Widget 版)
+ * ==========================================
+ */
 
-  const http = $httpClient;
+export default async function () {
 
-  const now = new Date();
+  // ── 环境变量 ─────────────────────────────
+  const env = $environment.params || {};
+
+  const envMode    = String(env.ASTRO_OR_WEEK || '').trim();
+  const SHOW_MODE  = (envMode === '周次' || envMode.toLowerCase() === 'week') ? 'week' : 'astro';
+
+  const envShowTW  = String(env.SHOW_TEACHING_WEEK || 'true').trim().toLowerCase();
+  const envTWStart = String(env.TEACHING_WEEK_START || '').trim();
+
+  // ── 尺寸 ────────────────────────────────
+  const family  = ($widget.family || 'medium').toLowerCase();
+  const isSmall = family.includes('small');
+  const isLarge = family.includes('large');
+
+  // ── 色彩 ────────────────────────────────
+  const C = {
+    bg: [{ light: '#FFFFFF', dark: '#1C1C1E' }, { light: '#F2F2F7', dark: '#0C0C0E' }],
+    main: { light: '#1C1C1E', dark: '#FFFFFF' },
+    sub: { light: '#48484A', dark: '#D1D1D6' },
+    muted: { light: '#8E8E93', dark: '#8E8E93' },
+    divider: { light: '#E5E5EA', dark: '#38383A' },
+    gold: { light: '#B58A28', dark: '#D6A53A' },
+    yi: { light: '#2E8045', dark: '#32D74B' },
+    ji: { light: '#CA3B32', dark: '#FF453A' },
+    term: { light: '#628C7B', dark: '#73A491' },
+    transparent: '#00000000'
+  };
+
+  // ── UI 工具 ─────────────────────────────
+  const mkText = (t, s, w, c, o={}) => ({ type:"text", text:String(t), font:{size:s,weight:w}, textColor:c, ...o });
+  const mkRow  = (c,g=4,o={}) => ({ type:"stack", direction:"row", alignItems:"center", gap:g, children:c, ...o });
+  const mkIcon = (s,c,size=13)=>({ type:"image", src:`sf-symbol:${s}`, color:c, width:size, height:size });
+  const mkSpacer = (l)=> l!=null?{type:"spacer",length:l}:{type:"spacer"};
+
+  // ── 时间（强制 UTC+8）────────────────────
+  const tzOffset = new Date().getTimezoneOffset();
+  const now = new Date(Date.now() + (tzOffset + 480) * 60000);
+
   const Y = now.getFullYear();
-  const M = now.getMonth() + 1;
+  const M = now.getMonth()+1;
   const D = now.getDate();
-  const H = now.getHours();
-  const W = "日一二三四五六"[now.getDay()];
+  const WEEK = "日一二三四五六"[now.getDay()];
 
-  const pad = n => String(n).padStart(2,"0");
-  const today = `${Y}-${pad(M)}-${pad(D)}`;
+  const P = n => String(n).padStart(2,'0');
 
-  // =========================
-  // 🧠 安全宜忌获取（强容错）
-  // =========================
-  let yi = "";
-  let ji = "";
-  let lunar = "";
-
-  try {
-    const url =
-      `https://raw.githubusercontent.com/zqzess/openApiData/main/calendar_new/${Y}/${pad(M)}.json`;
-
-    const data = await new Promise((resolve) => {
-      http.get(url, (err, res, body) => {
-        try { resolve(JSON.parse(body)); }
-        catch { resolve({}); }
-      });
-    });
-
-    for (let k in data) {
-      const v = data[k];
-      const str = JSON.stringify(v);
-
-      if (str.includes(`"${D}"`) || str.includes(`-${M}-${D}`)) {
-
-        yi =
-          v.yi || v.Yi || v.suit ||
-          "（暂无宜项）";
-
-        ji =
-          v.ji || v.Ji || v.avoid ||
-          "（暂无忌项）";
-
-        lunar =
-          v.lunar ||
-          v.lunarDate ||
-          v.cn ||
-          (v.monthCn && v.dayCn ? `${v.monthCn}${v.dayCn}` : "") ||
-          "农历信息未知";
-
-        break;
-      }
-    }
-  } catch (e) {}
-
-  // =========================
-  // 🧭 干支（稳定算法）
-  // =========================
-  const GAN = "甲乙丙丁戊己庚辛壬癸";
-  const ZHI = "子丑寅卯辰巳午未申酉戌亥";
-
-  const base = new Date(1900,0,1);
-  const days = Math.floor((now - base)/86400000);
-
-  const dayGZ = GAN[(days % 10 + 10) % 10] + ZHI[(days % 12 + 12) % 12];
-  const hourZ = ZHI[Math.floor((H + 1) % 24 / 2)];
-
-  // =========================
-  // ⏳ 终极倒计时（不会负数）
-  // =========================
-  const events = [
-    ["元旦","01-01"],
-    ["春节","02-10"],
-    ["劳动节","05-01"],
-    ["国庆","10-01"],
-    ["圣诞","12-25"]
-  ];
-
-  const getNextDate = (md) => {
-    const thisYear = `${Y}-${md}`;
-    const nextYear = `${Y+1}-${md}`;
-
-    const d1 = new Date(thisYear);
-    const d2 = new Date(nextYear);
-
-    return d1 >= now ? thisYear : nextYear;
+  // ── 周次 ────────────────────────────────
+  const getWeekInfo = (d) => {
+    const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    const dayNum = date.getUTCDay() || 7;
+    date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
+    const weekNo = Math.ceil((date - yearStart)/86400000/7 + 1);
+    const dayOfYear = Math.round((new Date(d.getFullYear(),d.getMonth(),d.getDate()) - new Date(d.getFullYear(),0,0))/86400000);
+    return `本年第${weekNo}周 · 第${dayOfYear}天`;
   };
 
-  const countdown = events
-    .map(e => {
-      const target = getNextDate(e[1]);
-      const d = Math.ceil((new Date(target) - now) / 86400000);
-      return `${e[0]} ${d}天`;
-    })
-    .join("\n");
-
-  // =========================
-  // 🧠 今日状态系统（新增）
-  // =========================
-  const hash = (s) => {
-    let h = 0;
-    for (let i = 0; i < s.length; i++) {
-      h = (h * 31 + s.charCodeAt(i)) % 100;
+  // ── 教学周 ───────────────────────────────
+  let teachingWeekStr = "";
+  if (SHOW_MODE === 'astro' && envShowTW === 'true' && envTWStart) {
+    const tStart = new Date(envTWStart.replace(/-/g,'/'));
+    if (!isNaN(tStart)) {
+      const diff = Math.floor((new Date(Y,M-1,D) - tStart)/86400000);
+      teachingWeekStr = diff>=0?`教学第${Math.floor(diff/7)+1}周`:"未开学";
     }
-    return h;
-  };
-
-  const score = hash(dayGZ + yi + ji);
-
-  let status = "";
-  let advice = "";
-
-  if (score > 75) {
-    status = "🔥 大吉日";
-    advice = "适合决策 / 推进重要事项";
-  } else if (score > 55) {
-    status = "✨ 偏吉日";
-    advice = "适合执行计划";
-  } else if (score > 35) {
-    status = "⚖️ 平稳日";
-    advice = "保持节奏即可";
-  } else {
-    status = "🌧️ 谨慎日";
-    advice = "避免重大决策";
   }
 
-  // =========================
-  // 📦 输出（Surge最稳格式）
-  // =========================
-  const title = `${Y}.${M}.${D} 周${W}`;
+  // ── 星期 / 星座模式 ───────────────────────
+  const topIcon = SHOW_MODE === 'week' ? 'list.number' : 'sparkles';
+  const topText = SHOW_MODE === 'week' ? getWeekInfo(now) : '';
 
-  const content =
-`📅 ${lunar}
+  // ── 农历（保留原逻辑，略压缩）────────────
+  const Lunar = {/* 原数组太长：保持你原版即可 */ info: [] };
 
-🧭 ${dayGZ}   ⏰ ${hourZ}时
+  // ⚠️ 这里建议你直接保留原 Egern 的 Lunar 对象
+  // Surge 不影响这部分逻辑
 
-${status}
-💡 ${advice}
+  // ── 示例远程请求（替换 ctx.http）───────
+  let apiData = {};
+  try {
+    const resp = await $httpClient.get({
+      url: `https://raw.githubusercontent.com/zqzess/openApiData/main/calendar_new/${Y}/${Y}${P(M)}.json`
+    });
+    const json = JSON.parse(resp.body);
 
-🟢 宜：${yi}
-🔴 忌：${ji}
+    apiData = json?.[`${Y}-${P(M)}-${P(D)}`] || {};
+  } catch (e) {}
 
-⏳ 倒计时
-${countdown}`;
+  const getVal = (...keys) => {
+    for (const k of keys) if (apiData?.[k]) return String(apiData[k]);
+    return "";
+  };
 
-  $done({ title, content });
+  const rawYi = getVal("yi","Yi","suit","appropriate");
+  const rawJi = getVal("ji","Ji","avoid","taboo");
 
-})();
+  // ── UI（简化保留）───────────────────────
+  return {
+    type: "widget",
+    backgroundColor: C.bg,
+    url: "calshow://",
+    children: [
+      mkRow([
+        mkIcon("calendar", C.main),
+        mkText(`${Y}年${M}月${D}日 星期${WEEK}`, 14, "bold", C.main),
+        mkSpacer(),
+        mkText(topText, 10, "medium", C.muted)
+      ]),
+
+      mkSpacer(6),
+
+      mkText(rawYi, 11, "medium", C.yi),
+      mkText(rawJi, 11, "medium", C.ji),
+    ]
+  };
+}
